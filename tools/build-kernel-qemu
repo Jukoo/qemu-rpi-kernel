@@ -14,34 +14,50 @@ USE_GIT=
 USB_WEBCAM_MODULES=""    # add USB & V4L modules for USB webcam support (didn't work as static)
 KERNEL_MAKE_CONFIG=menuconfig # set to olddefconfig to skip user prompting
 KERNEL_EXTRA_CONFIG=""
+declare  USE_TAG=""
 
 SOURCE_DIR=$(pwd)
 BUILD_DIR=$SOURCE_DIR
 TARGET_DIR=$SOURCE_DIR
                   
-LINUX_ARCHIVE_SOURCE="https://github.com/raspberrypi/linux/archive/"
+LINUX_ARCHIVE_SOURCE="https://github.com/raspberrypi/linux/archive/refs/tags/" 
 
 IFS=" " read -a kqemuconf   <<<`echo build-kernel-qemu.*`
 
+kqemuconf+=("Select Tags")  
+
 BUILD_TARGET_CFG=${kqemuconf}
 
-if [ -n $kqemuconf ] ; then
+if [ -n $kqemuconf ] ; then 
 
+    
     for  modconf  in  ${!kqemuconf[*]} ; do
         echo -e "\t $(($modconf+1)) -> ${kqemuconf[${modconf}]}"
     done
 
     read  -p "Select kernel build : "
 
-    if [  -z ${kqemuconf[$(($REPLY -1 ))]} ] ; then
-        exit 1
-    fi
+    [[ -z ${kqemuconf[$(($REPLY -1 ))]} ]]  && exit 1 
 
-    BUILD_TARGET_CFG=${kqemuconf[$(($REPLY -1))]}
+    BUILD_TARGET_CFG=${kqemuconf[$(($REPLY -1))]}  
+    len=${#kqemuconf[@]} 
+    len=$((len -1))
+   
+    case ${BUILD_TARGET_CFG} in   
+       ${kqemuconf[$len]} ) 
 
+         read  -p "kernel Tag : "   
+         
+         COMMIT=${REPLY} 
+         USE_TAG=1
+         echo -e "Tag used"
+         ;; 
+     esac 
 fi
 
-if [ -f $BUILD_TARGET_CFG ] ; then
+
+
+if [ -f $BUILD_TARGET_CFG ]  && [ -z  ${COMMIT} ] ; then
 
     #+ load the configuration ...
     echo  "loading  build ->  $BUILD_TARGET_CFG"
@@ -66,6 +82,16 @@ fetch_and_unpack_linux_archive ()  {
     tar -xzvf linux-${commit_target}.tar.gz  
 } 
 
+build_kernel_qemu_config() { 
+  local tag=$1
+
+  echo -e """
+  #configuration includes advanced network
+  #functionality embedded on the kernel
+  COMMIT=${tag}
+  """ >  build-kernel-qemu.conf-${tag} 
+
+}
 if [ -n "$USE_GIT" ] ; then
 	# checking out 4.x.y tag - change it if you want to change kernel version
 	# for a specific hash, have a look at: https://github.com/raspberrypi/linux/tags
@@ -84,6 +110,8 @@ if [ -n "$USE_GIT" ] ; then
 	fi
 else
 	if [ -z "$COMMIT" ] ; then echo "COMMIT missing!" >&2 ; exit 1 ; fi
+
+    #+ if found existing linux-${COMMIT} folder 
     if [ -d  linux-${COMMIT} ]   ;then 
          
         read  -p  "Found previews build directory :: linux-${COMMIT} use  it ? [y/n] "  
@@ -97,8 +125,13 @@ else
                 ;; 
         esac
     else 
-        fetch_and_unpack_linux_archive ${COMMIT} 
-        cd linux-${COMMIT}            
+      
+      fetch_and_unpack_linux_archive ${COMMIT}
+      
+      if [  -n ${USE_TAG} ] ; then
+        build_kernel_qemu_config  ${COMMIT}
+      fi
+      cd linux-${COMMIT}            
     fi 
 fi
 
